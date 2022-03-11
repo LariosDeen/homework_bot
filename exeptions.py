@@ -18,7 +18,7 @@ class NoHomeworkInfo(Exception):
     pass
 
 
-class GetApiStatusCodIsNot200(Exception):
+class WrongGetApiStatus(Exception):
     """Статус код ответа не равен 200"""
     pass
 

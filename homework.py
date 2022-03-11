@@ -2,18 +2,17 @@ import os
 import sys
 import time
 import logging
+from http import HTTPStatus
 
 import requests
-import telegram
 from dotenv import load_dotenv
+from telegram import Bot
+from telegram.error import TelegramError
 
-from exeptions import (GetApiError,
-                       SendMessageFailure,
-                       IncorrectApiAnswer,
-                       NoHomeworkInfo,
-                       GetApiStatusCodIsNot200,
-                       EmptyResponse,
-                       )
+from exeptions import (
+    SendMessageFailure, IncorrectApiAnswer, NoHomeworkInfo, WrongGetApiStatus,
+    EmptyResponse, GetApiError,
+)
 
 
 load_dotenv()
@@ -33,12 +32,12 @@ HOMEWORK_STATUSES = {
 }
 
 
-logger = logging.getLogger(__name__)
 logging.basicConfig(
     level=logging.INFO,
     format='[%(asctime)s] [%(levelname)s] %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
 )
+logger = logging.getLogger(__name__)
 handler = logging.StreamHandler(stream=sys.stdout)
 logger.addHandler(handler)
 
@@ -49,8 +48,8 @@ def send_message(bot, message):
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
         msg = f'Сообщение "{message}" отправлено в Telegram чат'
         logger.info(msg)
-    except Exception:
-        msg = f'Сбой при отправке сообщения "{message}" в Telegram чат.'
+    except TelegramError as error:
+        msg = f'Сбой при отправке сообщения: {error}'
         logger.error(msg)
         raise SendMessageFailure(msg)
 
@@ -60,17 +59,16 @@ def get_api_answer(current_timestamp):
     timestamp = current_timestamp or int(time.time())
     params = {'from_date': timestamp}
     try:
-        homework_statuses = requests.get(ENDPOINT,
-                                         headers=HEADERS,
-                                         params=params,
-                                         )
-        if homework_statuses.status_code != 200:
+        homework_statuses = requests.get(
+            ENDPOINT, headers=HEADERS, params=params,
+        )
+        if homework_statuses.status_code != HTTPStatus.OK:
             message = f'Статус код ответа на запрос к "{ENDPOINT}" равен '
             f'{homework_statuses.status_code}.'
             logger.error(message)
-            raise GetApiStatusCodIsNot200(message)
-    except Exception:
-        message = 'Не удалось получить информацию с сервера.'
+            raise WrongGetApiStatus(message)
+    except Exception as error:
+        message = f'Сбой в работе API сервиса: {error}'
         logger.error(message)
         raise GetApiError(message)
     response = homework_statuses.json()
@@ -120,23 +118,18 @@ def parse_status(homework):
 
 def check_tokens():
     """Проверка доступности переменных окружения."""
-    if not PRACTICUM_TOKEN:
-        logger.critical('Токен PRACTICUM_TOKEN не найден.')
-        return False
-    elif not TELEGRAM_TOKEN:
-        logger.critical('Токен TELEGRAM_TOKEN не найден.')
-        return False
-    elif not TELEGRAM_CHAT_ID:
-        logger.critical('ID чата Телеграмм TELEGRAM_CHAT_ID не найден.')
-        return False
-    return True
+    env_variables_available = all(
+        [PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, ]
+    )
+    return env_variables_available
 
 
 def main():
     """Основная логика работы бота."""
     if not check_tokens():
-        exit('Работа программы завершена.')
-    bot = telegram.Bot(token=TELEGRAM_TOKEN)
+        logger.critical('Недоступна одна или несколько переменных окружения.')
+        sys.exit('Работа программы завершена.')
+    bot = Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
     last_message = None
     last_error = None
@@ -158,17 +151,17 @@ def main():
                 message = 'Статус домашней работы не изменился.'
                 logger.debug(message)
             current_timestamp = response.get('current_date')
-            time.sleep(RETRY_TIME)
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logger.error(message)
             if message != last_error:
                 send_message(bot=bot, message=message)
                 last_error = message
-            time.sleep(RETRY_TIME)
         else:
             message = 'Программа отработала без ошибок.'
             logger.info(message)
+        finally:
+            time.sleep(RETRY_TIME)
 
 
 if __name__ == '__main__':
