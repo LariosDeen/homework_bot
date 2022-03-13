@@ -11,7 +11,7 @@ from exceptions import (
     SendMessageFailure, IncorrectApiAnswer, NoHomeworkInfo, WrongGetApiStatus,
     EmptyResponse, GetApiError,
 )
-from constant import (
+from constants import (
     PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, ENDPOINT, HEADERS,
     HOMEWORK_STATUSES, RETRY_TIME,
 )
